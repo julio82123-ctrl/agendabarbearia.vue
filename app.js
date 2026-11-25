@@ -1,17 +1,37 @@
 const { createApp, ref, reactive, computed, watch } = Vue
 
-// ---------- Funções de apoio: ler e guardar no localStorage ----------
-function carregar(chave, padrao) {
-  try {
-    const texto = localStorage.getItem(chave)
-    return texto ? JSON.parse(texto) : padrao
-  } catch (e) {
-    return padrao
+// ---------- Banco de dados do navegador (IndexedDB) ----------
+let bancoPronto = null
+
+function banco() {
+  if (!bancoPronto) {
+    bancoPronto = new Promise((resolve, reject) => {
+      const pedido = indexedDB.open('barbearia-db', 1)
+      pedido.onupgradeneeded = () => pedido.result.createObjectStore('dados')
+      pedido.onsuccess = () => resolve(pedido.result)
+      pedido.onerror = () => reject(pedido.error)
+    })
   }
+  return bancoPronto
 }
 
-function guardar(chave, valor) {
-  localStorage.setItem(chave, JSON.stringify(valor))
+async function carregar(chave, padrao) {
+  const db = await banco()
+  return new Promise((resolve) => {
+    const pedido = db.transaction('dados', 'readonly').objectStore('dados').get(chave)
+    pedido.onsuccess = () => resolve(pedido.result === undefined ? padrao : pedido.result)
+    pedido.onerror = () => resolve(padrao)
+  })
+}
+
+async function guardar(chave, valor) {
+  const db = await banco()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('dados', 'readwrite')
+    tx.objectStore('dados').put(JSON.parse(JSON.stringify(valor)), chave)
+    tx.oncomplete = resolve
+    tx.onerror = () => reject(tx.error)
+  })
 }
 
 // ---------- Logo ----------
@@ -155,6 +175,7 @@ const Sidebar = {
     </aside>
   `,
 }
+
 // ---------- Formulário de agendamento ----------
 const FormAgendamento = {
   props: {
@@ -381,7 +402,9 @@ const ListaAgendamentos = {
       </ul>
     </section>
   `,
-}// ---------- Tela "Minha barbearia": dados, barbeiros e serviços ----------
+}
+
+// ---------- Tela "Minha barbearia": dados, barbeiros e serviços ----------
 const PainelBarbearia = {
   props: {
     barbearia: { type: Object, required: true },
@@ -535,17 +558,18 @@ const PainelBarbearia = {
 // ---------- App: componente principal ----------
 const App = {
   components: { Login, Sidebar, FormAgendamento, ListaAgendamentos, PainelBarbearia },
-  setup() {
+  props: { inicial: { type: Object, required: true } },
+  setup(props) {
     const logado = ref(false)
     const tela = ref('agenda')
     const editando = ref(null)
 
     // Tudo que fica salvo no navegador
-    const conta = ref(carregar('conta', null))
-    const barbearia = ref(carregar('barbearia', { nome: '', endereco: '', telefone: '' }))
-    const barbeiros = ref(carregar('barbeiros', [...BARBEIROS_PADRAO]))
-    const servicos = ref(carregar('servicos', SERVICOS_PADRAO.map((s) => ({ ...s }))))
-    const agendamentos = ref(carregar('agendamentos', []))
+    const conta = ref(props.inicial.conta)
+    const barbearia = ref(props.inicial.barbearia)
+    const barbeiros = ref(props.inicial.barbeiros)
+    const servicos = ref(props.inicial.servicos)
+    const agendamentos = ref(props.inicial.agendamentos)
 
     watch(conta, (v) => guardar('conta', v), { deep: true })
     watch(barbearia, (v) => guardar('barbearia', v), { deep: true })
@@ -653,4 +677,16 @@ const App = {
   `,
 }
 
-createApp(App).mount('#app')
+// Lê tudo do banco primeiro, depois liga o app
+async function iniciar() {
+  const inicial = {
+    conta: await carregar('conta', null),
+    barbearia: await carregar('barbearia', { nome: '', endereco: '', telefone: '' }),
+    barbeiros: await carregar('barbeiros', [...BARBEIROS_PADRAO]),
+    servicos: await carregar('servicos', SERVICOS_PADRAO.map((s) => ({ ...s }))),
+    agendamentos: await carregar('agendamentos', []),
+  }
+  createApp(App, { inicial }).mount('#app')
+}
+
+iniciar()
