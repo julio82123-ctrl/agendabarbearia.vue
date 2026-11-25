@@ -228,3 +228,20 @@ input:focus, select:focus { outline: none; border-color: var(--claro); }
   .conteudo { padding: 20px 12px; }
   .quando { border-right: none; padding-right: 0; }
 }
+
+/* ---------- Novidades: cadastro, valores e links ---------- */
+.sucesso { color: #6fcf97; font-size: 0.9rem; }
+.link {
+  background: none;
+  border: none;
+  color: var(--suave);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.95rem;
+  padding: 4px;
+}
+.link:hover { color: var(--texto); }
+.valor { color: var(--claro); font-weight: 600; }
+.linha-fim { align-items: flex-end; }
+.cabecalho-card { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.sidebar .btn { margin-top: 12px; }
