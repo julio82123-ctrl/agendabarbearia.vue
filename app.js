@@ -1,6 +1,5 @@
 const { createApp, ref, reactive, computed, watch } = Vue
 
-// ---------- Banco de dados do navegador (IndexedDB) ----------
 let bancoPronto = null
 
 function banco() {
@@ -34,7 +33,6 @@ async function guardar(chave, valor) {
   })
 }
 
-// ---------- Logo ----------
 const Logo = {
   props: { tamanho: { type: Number, default: 40 } },
   template: `
@@ -48,7 +46,6 @@ const Logo = {
   `,
 }
 
-// ---------- Login e cadastro da barbearia ----------
 const Login = {
   components: { Logo },
   props: { conta: { type: Object, default: null } },
@@ -134,7 +131,6 @@ const Login = {
   `,
 }
 
-// ---------- Menu lateral ----------
 const Sidebar = {
   components: { Logo },
   props: {
@@ -176,7 +172,6 @@ const Sidebar = {
   `,
 }
 
-// ---------- Formulário de agendamento ----------
 const FormAgendamento = {
   props: {
     agendamentos: { type: Array, required: true },
@@ -189,23 +184,37 @@ const FormAgendamento = {
     const erro = ref('')
 
     function formVazio() {
-      return { id: null, cliente: '', servicoId: '', barbeiro: '', data: '', horario: '' }
+      return { id: null, cliente: '', servicoIds: [], barbeiro: '', data: '', horario: '' }
     }
     const form = reactive(formVazio())
 
-    // Data de hoje no formato do input date (AAAA-MM-DD)
     const hoje = new Date().toLocaleDateString('en-CA')
 
-    // Ao clicar em "Editar" na lista, preenche o formulário
     watch(
       () => props.editando,
       (novo) => {
-        Object.assign(form, novo ? { ...novo } : formVazio())
+        if (!novo) {
+          Object.assign(form, formVazio())
+          erro.value = ''
+          return
+        }
+
+        let ids = Array.isArray(novo.servicoIds)
+          ? novo.servicoIds.filter((id) => props.servicos.some((s) => s.id === id))
+          : []
+
+        if (ids.length === 0 && novo.servico) {
+          const partes = novo.servico.split('+').map((p) => p.trim().toLowerCase())
+          ids = props.servicos
+            .filter((s) => partes.includes(s.nome.toLowerCase()))
+            .map((s) => s.id)
+        }
+
+        Object.assign(form, { ...formVazio(), ...novo, servicoIds: ids })
         erro.value = ''
       }
     )
 
-    // Trocou data ou barbeiro: o horário escolhido pode estar ocupado
     watch(
       () => [form.data, form.barbeiro],
       () => {
@@ -213,7 +222,6 @@ const FormAgendamento = {
       }
     )
 
-    // Livre = ninguém marcou com o mesmo barbeiro, na mesma data e hora
     function horarioLivre(horario) {
       return !props.agendamentos.some(
         (a) =>
@@ -230,8 +238,12 @@ const FormAgendamento = {
 
     const podeEscolherHorario = computed(() => form.data && form.barbeiro)
 
-    const servicoEscolhido = computed(() =>
-      props.servicos.find((s) => s.id === form.servicoId)
+    const servicosEscolhidos = computed(() =>
+      props.servicos.filter((s) => form.servicoIds.includes(s.id))
+    )
+
+    const total = computed(() =>
+      servicosEscolhidos.value.reduce((soma, s) => soma + Number(s.preco || 0), 0)
     )
 
     const cadastroCompleto = computed(
@@ -239,13 +251,25 @@ const FormAgendamento = {
     )
 
     function enviar() {
-      const s = servicoEscolhido.value
-      if (!form.cliente.trim() || !s || !props.barbeiros.includes(form.barbeiro) || !form.data || !form.horario) {
-        erro.value = 'Preencha todos os campos e escolha um horário.'
+      const escolhidos = servicosEscolhidos.value
+      if (
+        !form.cliente.trim() ||
+        escolhidos.length === 0 ||
+        !props.barbeiros.includes(form.barbeiro) ||
+        !form.data ||
+        !form.horario
+      ) {
+        erro.value = 'Preencha todos os campos, escolha ao menos um serviço e um horário.'
         return
       }
       erro.value = ''
-      emit('salvar', { ...form, cliente: form.cliente.trim(), servico: s.nome, preco: s.preco })
+      emit('salvar', {
+        ...form,
+        cliente: form.cliente.trim(),
+        servicoIds: escolhidos.map((s) => s.id),
+        servico: escolhidos.map((s) => s.nome).join(' + '),
+        preco: total.value,
+      })
       Object.assign(form, formVazio())
     }
 
@@ -256,8 +280,17 @@ const FormAgendamento = {
     }
 
     return {
-      erro, form, hoje, horarios, podeEscolherHorario,
-      servicoEscolhido, cadastroCompleto, enviar, cancelar, formatarPreco,
+      erro,
+      form,
+      hoje,
+      horarios,
+      podeEscolherHorario,
+      servicosEscolhidos,
+      total,
+      cadastroCompleto,
+      enviar,
+      cancelar,
+      formatarPreco,
     }
   },
   template: `
@@ -276,18 +309,6 @@ const FormAgendamento = {
           </label>
 
           <label>
-            Serviço
-            <select v-model="form.servicoId">
-              <option value="" disabled>Escolha o serviço</option>
-              <option v-for="s in servicos" :key="s.id" :value="s.id">
-                {{ s.nome }} - {{ formatarPreco(s.preco) }}
-              </option>
-            </select>
-          </label>
-        </div>
-
-        <div class="linha">
-          <label>
             Barbeiro
             <select v-model="form.barbeiro">
               <option value="" disabled>Escolha o barbeiro</option>
@@ -301,8 +322,24 @@ const FormAgendamento = {
           </label>
         </div>
 
-        <p v-if="servicoEscolhido" class="valor">
-          Valor: {{ formatarPreco(servicoEscolhido.preco) }}
+        <div>
+          <p class="rotulo">Serviços (escolha um ou mais)</p>
+          <div class="opcoes">
+            <label
+              v-for="s in servicos"
+              :key="s.id"
+              class="opcao"
+              :class="{ ativa: form.servicoIds.includes(s.id) }"
+            >
+              <input type="checkbox" :value="s.id" v-model="form.servicoIds" />
+              <span>{{ s.nome }}</span>
+              <span class="preco">{{ formatarPreco(s.preco) }}</span>
+            </label>
+          </div>
+        </div>
+
+        <p v-if="servicosEscolhidos.length" class="valor">
+          Total: {{ formatarPreco(total) }}
         </p>
 
         <div>
@@ -343,24 +380,20 @@ const FormAgendamento = {
   `,
 }
 
-// ---------- Lista de agendamentos ----------
 const ListaAgendamentos = {
   props: { agendamentos: { type: Array, required: true } },
   emits: ['editar', 'excluir'],
   setup(props) {
-    // Ordena por data e depois por horário
     const ordenados = computed(() =>
       [...props.agendamentos].sort((a, b) =>
         (a.data + a.horario).localeCompare(b.data + b.horario)
       )
     )
 
-    // Soma dos valores de todos os agendamentos
     const total = computed(() =>
       props.agendamentos.reduce((soma, a) => soma + Number(a.preco || 0), 0)
     )
 
-    // Transforma 2026-11-23 em 23/11/2026
     function formatarData(data) {
       const [ano, mes, dia] = data.split('-')
       return dia + '/' + mes + '/' + ano
@@ -404,16 +437,15 @@ const ListaAgendamentos = {
   `,
 }
 
-// ---------- Tela "Minha barbearia": dados, barbeiros e serviços ----------
 const PainelBarbearia = {
   props: {
     barbearia: { type: Object, required: true },
     barbeiros: { type: Array, required: true },
     servicos: { type: Array, required: true },
+    agendamentos: { type: Array, default: () => [] },
   },
   emits: ['salvar-barbearia', 'add-barbeiro', 'remover-barbeiro', 'add-servico', 'remover-servico'],
   setup(props, { emit }) {
-    // Cópia local dos dados da barbearia, para editar sem mexer no original
     const dados = reactive({ ...props.barbearia })
     const msg = ref('')
     const erroDados = ref('')
@@ -429,7 +461,6 @@ const PainelBarbearia = {
       msg.value = 'Dados salvos.'
     }
 
-    // Barbeiros
     const novoBarbeiro = ref('')
     const erroBarbeiro = ref('')
 
@@ -449,7 +480,6 @@ const PainelBarbearia = {
       novoBarbeiro.value = ''
     }
 
-    // Serviços
     const novoServico = ref('')
     const novoPreco = ref('')
     const erroServico = ref('')
@@ -467,10 +497,26 @@ const PainelBarbearia = {
       novoPreco.value = ''
     }
 
+    const agendamentosOrdenados = computed(() =>
+      [...props.agendamentos].sort((a, b) =>
+        (a.data + a.horario).localeCompare(b.data + b.horario)
+      )
+    )
+
+    const totalAgendamentos = computed(() =>
+      props.agendamentos.reduce((soma, a) => soma + Number(a.preco || 0), 0)
+    )
+
+    function formatarData(data) {
+      const [ano, mes, dia] = data.split('-')
+      return dia + '/' + mes + '/' + ano
+    }
+
     return {
       dados, msg, erroDados, salvarDados,
       novoBarbeiro, erroBarbeiro, adicionarBarbeiro,
       novoServico, novoPreco, erroServico, adicionarServico,
+      agendamentosOrdenados, totalAgendamentos, formatarData,
       formatarPreco,
     }
   },
@@ -551,11 +597,38 @@ const PainelBarbearia = {
           </li>
         </ul>
       </section>
+
+      <section class="card">
+        <div class="cabecalho-card">
+          <h2>Agendamentos ({{ agendamentos.length }})</h2>
+          <p v-if="agendamentos.length" class="valor">
+            Total previsto: {{ formatarPreco(totalAgendamentos) }}
+          </p>
+        </div>
+
+        <p v-if="agendamentos.length === 0" class="aviso">
+          Nenhum agendamento registrado ainda.
+        </p>
+
+        <ul v-else class="lista">
+          <li v-for="a in agendamentosOrdenados" :key="a.id" class="item">
+            <div class="quando">
+              <strong>{{ a.horario }}</strong>
+              <span>{{ formatarData(a.data) }}</span>
+            </div>
+
+            <div class="info">
+              <strong>{{ a.cliente }}</strong>
+              <span>{{ a.servico }} - {{ formatarPreco(a.preco) }}</span>
+              <span>Barbeiro: {{ a.barbeiro }}</span>
+            </div>
+          </li>
+        </ul>
+      </section>
     </div>
   `,
 }
 
-// ---------- App: componente principal ----------
 const App = {
   components: { Login, Sidebar, FormAgendamento, ListaAgendamentos, PainelBarbearia },
   props: { inicial: { type: Object, required: true } },
@@ -564,7 +637,6 @@ const App = {
     const tela = ref('agenda')
     const editando = ref(null)
 
-    // Tudo que fica salvo no navegador
     const conta = ref(props.inicial.conta)
     const barbearia = ref(props.inicial.barbearia)
     const barbeiros = ref(props.inicial.barbeiros)
@@ -577,7 +649,6 @@ const App = {
     watch(servicos, (v) => guardar('servicos', v), { deep: true })
     watch(agendamentos, (v) => guardar('agendamentos', v), { deep: true })
 
-    // Login e cadastro
     function entrar() {
       logado.value = true
       tela.value = 'agenda'
@@ -596,7 +667,6 @@ const App = {
       tela.value = nova
     }
 
-    // Agendamentos (criar, editar, excluir)
     function salvar(a) {
       if (a.id) {
         agendamentos.value = agendamentos.value.map((x) => (x.id === a.id ? a : x))
@@ -617,7 +687,6 @@ const App = {
       editando.value = null
     }
 
-    // Barbearia, barbeiros e serviços
     function salvarBarbearia(dados) {
       barbearia.value = { ...dados }
     }
@@ -666,6 +735,7 @@ const App = {
           :barbearia="barbearia"
           :barbeiros="barbeiros"
           :servicos="servicos"
+          :agendamentos="agendamentos"
           @salvar-barbearia="salvarBarbearia"
           @add-barbeiro="addBarbeiro"
           @remover-barbeiro="removerBarbeiro"
@@ -677,7 +747,6 @@ const App = {
   `,
 }
 
-// Lê tudo do banco primeiro, depois liga o app
 async function iniciar() {
   const inicial = {
     conta: await carregar('conta', null),

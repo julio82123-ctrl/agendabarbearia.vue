@@ -245,3 +245,40 @@ input:focus, select:focus { outline: none; border-color: var(--claro); }
 .linha-fim { align-items: flex-end; }
 .cabecalho-card { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
 .sidebar .btn { margin-top: 12px; }
+
+/* ---------- Escolha de varios servicos ---------- */
+.opcoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.opcao {
+  flex-direction: row;
+  align-items: center;
+  flex: none;
+  min-width: 0;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: var(--campo);
+  font-size: 0.95rem;
+  font-weight: 400;
+  cursor: pointer;
+}
+.opcao.ativa { border-color: var(--claro); }
+.opcao .preco { color: var(--suave); }
+input[type="checkbox"] { padding: 0; width: 18px; height: 18px; accent-color: #e4e4e7; }
+/* ---------- Quantidade de cada servico ---------- */
+div.opcao { display: flex; cursor: default; }
+.contador { display: flex; align-items: center; gap: 8px; margin-left: 6px; }
+.contador strong { min-width: 16px; text-align: center; }
+.contador-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--texto);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.contador-btn:hover:not(:disabled) { border-color: var(--claro); }
+.contador-btn:disabled { opacity: 0.35; cursor: not-allowed; }
